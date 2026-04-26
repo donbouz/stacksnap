@@ -73,6 +73,15 @@ def test_diff_missing_key_in_one_snapshot(snap_a, snap_b):
     assert diff["sections"]["node"]["new"] is None
 
 
+def test_diff_key_added_in_second_snapshot(snap_a, snap_b):
+    """A key present only in snap_b should appear as added in the diff."""
+    snap_b["ruby"] = "3.2.0"
+    diff = diff_snapshots(snap_a, snap_b)
+    assert "ruby" in diff["changed_keys"]
+    assert diff["sections"]["ruby"]["old"] is None
+    assert diff["sections"]["ruby"]["new"] == "3.2.0"
+
+
 def test_format_diff_no_changes(snap_a):
     diff = diff_snapshots(snap_a, snap_a)
     output = format_diff(diff)
