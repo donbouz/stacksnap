@@ -86,3 +86,27 @@ def purge_archive(
             snap_file.unlink()
             purged.append(snap_file.stem)
     return purged
+
+
+def archive_summary(
+    snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR,
+    archive_dir: Path | None = None,
+) -> Dict[str, Any]:
+    """Return a summary dict with counts and sizes for snapshots and archive.
+
+    Useful for CLI status commands or diagnostic output.
+    """
+    if archive_dir is None:
+        archive_dir = snapshot_dir.parent / "archive"
+
+    def _dir_stats(directory: Path) -> Dict[str, Any]:
+        if not directory.exists():
+            return {"count": 0, "total_bytes": 0}
+        files = list(directory.glob("*.json"))
+        total_bytes = sum(f.stat().st_size for f in files if f.is_file())
+        return {"count": len(files), "total_bytes": total_bytes}
+
+    return {
+        "snapshots": _dir_stats(snapshot_dir),
+        "archive": _dir_stats(archive_dir),
+    }
