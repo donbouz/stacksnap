@@ -15,7 +15,12 @@ def _load_pins(snapshot_dir: Path) -> List[str]:
     if not pins_path.exists():
         return []
     with pins_path.open() as fh:
-        return json.load(fh)
+        data = json.load(fh)
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Expected a JSON array in {pins_path}, got {type(data).__name__}"
+        )
+    return data
 
 
 def _save_pins(snapshot_dir: Path, pins: List[str]) -> None:
