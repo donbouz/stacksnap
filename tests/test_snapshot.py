@@ -103,3 +103,58 @@ def test_delete_snapshot_removes_file():
 
 def test_delete_snapshot_returns_false_for_missing():
     assert snap.delete_snapshot("ghost") is False
+
+
+# ---------------------------------------------------------------------------
+# _walk_files / skipped_files
+# ---------------------------------------------------------------------------
+
+def test_walk_files_includes_readable_file(tmp_path):
+    (tmp_path / "hello.txt").write_text("world")
+    files, skipped = snap._walk_files(tmp_path)
+    assert "hello.txt" in files
+    assert files["hello.txt"] == "world"
+    assert skipped == []
+
+
+def test_walk_files_skips_unreadable_file(tmp_path):
+    readable = tmp_path / "ok.txt"
+    readable.write_text("ok")
+    unreadable = tmp_path / "secret.env"
+    unreadable.write_text("secret")
+
+    original_read_text = unreadable.read_text
+
+    def selective_read_text(*args, **kwargs):
+        raise PermissionError("Permission denied")
+
+    with patch.object(type(unreadable), "read_text", selective_read_text):
+        # patch only the one file by intercepting _walk_files internals via monkeypatching Path.read_text
+        pass
+
+    # Use a simpler approach: patch the whole read_text on Path instances via the module
+    def patched_read_text(self, *args, **kwargs):
+        if self.name == "secret.env":
+            raise PermissionError("Permission denied")
+        return original_read_text.__func__(self, *args, **kwargs) if hasattr(original_read_text, '__func__') else self.read_bytes().decode()
+
+    with patch("pathlib.Path.read_text", patched_read_text):
+        files, skipped = snap._walk_files(tmp_path)
+
+    assert "ok.txt" in files
+    assert "secret.env" not in files
+    assert "secret.env" in skipped
+
+
+def test_capture_snapshot_includes_skipped_files_key():
+    result = snap.capture_snapshot(name="skip-test")
+    assert "skipped_files" in result
+    assert isinstance(result["skipped_files"], list)
+
+
+def test_skipped_files_persisted_in_metadata():
+    with patch("stacksnap.snapshot._walk_files", return_value=({}, ["secret.env"])):
+        s = snap.capture_snapshot(name="persist-test")
+    snap.save_snapshot(s)
+    loaded = snap.load_snapshot("persist-test")
+    assert loaded["skipped_files"] == ["secret.env"]
