@@ -19,11 +19,27 @@ def _run(cmd: list[str]) -> str:
         return ""
 
 
+def _walk_files(root: Path) -> tuple[dict[str, str], list[str]]:
+    """Walk root recursively. Returns (files_dict, skipped_paths) where skipped paths are unreadable."""
+    files: dict[str, str] = {}
+    skipped: list[str] = []
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(root))
+        try:
+            files[rel] = p.read_text(errors="replace")
+        except PermissionError:
+            skipped.append(rel)
+    return files, skipped
+
+
 def capture_snapshot(name: Optional[str] = None) -> dict:
     """Capture the current dev environment state and return a snapshot dict."""
     timestamp = datetime.utcnow().isoformat()
     label = name or f"snap-{timestamp}"
 
+    files, skipped = _walk_files(Path.cwd())
     snapshot = {
         "label": label,
         "timestamp": timestamp,
@@ -38,34 +54,39 @@ def capture_snapshot(name: Optional[str] = None) -> dict:
             for k, v in os.environ.items()
             if k.startswith(("PROJECT_", "APP_", "DATABASE_", "REDIS_", "API_"))
         },
+        "files": files,
+        "skipped_files": skipped,
     }
     return snapshot
 
 
-def save_snapshot(snapshot: dict) -> Path:
+def save_snapshot(snapshot: dict, snap_dir: Optional[Path] = None) -> Path:
     """Persist a snapshot to disk and return the file path."""
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    directory = Path(snap_dir) if snap_dir is not None else SNAPSHOT_DIR
+    directory.mkdir(parents=True, exist_ok=True)
     safe_label = snapshot["label"].replace(" ", "_").replace("/", "-")
-    path = SNAPSHOT_DIR / f"{safe_label}.json"
+    path = directory / f"{safe_label}.json"
     path.write_text(json.dumps(snapshot, indent=2))
     return path
 
 
-def load_snapshot(label: str) -> dict:
+def load_snapshot(label: str, snap_dir: Optional[Path] = None) -> dict:
     """Load a snapshot by label. Raises FileNotFoundError if not found."""
+    directory = Path(snap_dir) if snap_dir is not None else SNAPSHOT_DIR
     safe_label = label.replace(" ", "_").replace("/", "-")
-    path = SNAPSHOT_DIR / f"{safe_label}.json"
+    path = directory / f"{safe_label}.json"
     if not path.exists():
         raise FileNotFoundError(f"No snapshot found with label: {label!r}")
     return json.loads(path.read_text())
 
 
-def list_snapshots() -> list[dict]:
+def list_snapshots(snap_dir: Optional[Path] = None) -> list[dict]:
     """Return metadata for all saved snapshots, sorted newest first."""
-    if not SNAPSHOT_DIR.exists():
+    directory = Path(snap_dir) if snap_dir is not None else SNAPSHOT_DIR
+    if not directory.exists():
         return []
     snapshots = []
-    for p in SNAPSHOT_DIR.glob("*.json"):
+    for p in directory.glob("*.json"):
         try:
             data = json.loads(p.read_text())
             snapshots.append({"label": data["label"], "timestamp": data["timestamp"], "cwd": data["cwd"]})

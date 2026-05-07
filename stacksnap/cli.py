@@ -23,6 +23,18 @@ def cmd_capture(args: argparse.Namespace) -> None:
     snap = capture_snapshot(name=getattr(args, "name", None))
     path = save_snapshot(snap, snap_dir)
     print(f"Snapshot saved: {path}")
+    skipped = snap.get("skipped_files", [])
+    if skipped:
+        count = len(skipped)
+        print(
+            f"WARNING: skipped {count} unreadable file(s) — run with --verbose to list them",
+            file=sys.stderr,
+        )
+        if getattr(args, "verbose", False):
+            for p in skipped:
+                print(f"  skipped: {p}", file=sys.stderr)
+        if getattr(args, "strict", False):
+            sys.exit(1)
 
 
 def cmd_restore(args: argparse.Namespace) -> None:
@@ -60,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     cap = sub.add_parser("capture", help="Capture current environment")
     cap.add_argument("--name", default=None)
+    cap.add_argument("--strict", action="store_true", help="Exit non-zero if any files were skipped due to permissions")
+    cap.add_argument("--verbose", action="store_true", help="List each skipped file path on stderr")
     cap.set_defaults(func=cmd_capture)
 
     res = sub.add_parser("restore", help="Restore a snapshot")
